@@ -4,27 +4,33 @@ import { QueueProvider, QueueContext } from './QueueContext';
 import { AuthProvider } from './AuthContext';
 import { useContext, useEffect } from 'react';
 
+const OWNER_EMAIL = 'demo@example.com';
+const REMINDER_EMAIL = 'other@example.com';
+
 const TestApp = () => {
   const q = useContext(QueueContext)!;
 
   useEffect(() => {
-    // start machine m1 owned by demo-user
-    q.startMachine('m1', 'demo-user', 1, 'Demo User');
-  }, []);
+    q.startMachine('m1', OWNER_EMAIL, 0.001, 'Demo User');
+  }, [q]);
 
-  // when machines update and owner is set, send reminder
   useEffect(() => {
-    const m = q.machines.find((x) => x.id === 'm1');
-    if (m && m.ownerId) {
-      const ok = q.sendReminder('m1', 'other-user');
-      const notes = q.getNotifications('demo-user');
-      // render counts into DOM for assertions
-      const el = document.getElementById('out')!;
-      el.textContent = `${ok ? 'ok' : 'no'}|${notes.length}|${notes[0]?.message || ''}`;
-    }
-  }, [q.machines]);
+    const run = async () => {
+      const machine = q.machines.find((x) => x.id === 'm1');
+      const outlet = document.getElementById('out');
+      if (!machine || !outlet || outlet.dataset.done === '1') return;
+      if (machine.state !== 'finished') return;
 
-  return <div id="out" />;
+      const ok = await q.sendReminder('m1', REMINDER_EMAIL);
+      const notes = q.getNotifications(OWNER_EMAIL);
+      outlet.textContent = `${ok ? 'ok' : 'no'}|${notes.length}|${notes[0]?.message || ''}`;
+      outlet.dataset.done = '1';
+    };
+
+    run();
+  }, [q, q.machines]);
+
+  return <div id="out" data-done="0" />;
 };
 
 describe('QueueContext notifications', () => {

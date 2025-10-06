@@ -20,11 +20,12 @@ export const Navbar = () => {
 
   const queue = useContext(QueueContext);
   const [open, setOpen] = useState(false);
-  const notes = auth?.currentUser ? queue?.getNotifications(auth.currentUser.id) || [] : [];
+  const currentUserEmail = auth?.currentUser.email || null;
+  const notes = currentUserEmail ? queue?.getNotifications(currentUserEmail) || [] : [];
 
   const onClear = () => {
-    if (!auth?.currentUser) return;
-    queue?.clearNotifications(auth.currentUser.id);
+    if (!currentUserEmail) return;
+    queue?.clearNotifications(currentUserEmail);
     setOpen(false);
   };
 
@@ -34,6 +35,9 @@ export const Navbar = () => {
         <div>
           <div className="text-lg font-medium">Laundry Queue</div>
           <div className="text-sm text-slate-600">Demo — local mock backend</div>
+          <div className="text-xs text-slate-500 mt-1 break-all">
+            {currentUserEmail ? `Email: ${currentUserEmail}` : 'Email not set'}
+          </div>
         </div>
 
         <div className="flex items-center gap-6">

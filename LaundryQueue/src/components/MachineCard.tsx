@@ -2,6 +2,8 @@ import { useContext, useEffect, useMemo, useState } from 'react';
 import type { Machine } from '../context/QueueContext';
 import { QueueContext } from '../context/QueueContext';
 import { AuthContext } from '../context/AuthContext';
+import { EmailModal } from './EmailModal';
+import { getUserEmail } from '../utilities/firebasePlaceholder';
 
 const formatRemaining = (finishTs?: string | null) => {
   if (!finishTs) return null;
@@ -26,40 +28,86 @@ export const MachineCard = ({ machine }: { machine: Machine }) => {
   }, []);
 
   const finishTs = useMemo(() => {
+    if (machine.expectedFinishTime) return machine.expectedFinishTime;
     if (machine.startTime && machine.durationMin) {
       return new Date(new Date(machine.startTime).getTime() + machine.durationMin * 60_000).toISOString();
     }
     return null;
-  }, [machine.startTime, machine.durationMin]);
+  }, [machine.expectedFinishTime, machine.startTime, machine.durationMin]);
 
   const remaining = formatRemaining(finishTs);
 
   const auth = useContext(AuthContext);
-  const [selectedDuration, setSelectedDuration] = useState<number>(machine.durationMin || 0.1);
+  const [selectedDuration, setSelectedDuration] = useState<number>(machine.durationMin || 35);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(getUserEmail());
   const DURATIONS = [0.1, 35, 45, 60];
 
-  const onStart = () => {
+  useEffect(() => {
+    if (auth?.currentUser.email) {
+      setUserEmail(auth.currentUser.email);
+    }
+  }, [auth?.currentUser.email]);
+
+  const currentUserEmail = auth?.currentUser.email || userEmail || null;
+  const isOwner = Boolean(machine.ownerEmail && currentUserEmail && machine.ownerEmail === currentUserEmail);
+
+  const onStart = async () => {
+    console.log('onStart called', { userEmail, machine });
+    if (!userEmail) {
+      console.log('No user email, showing modal');
+      setShowEmailModal(true);
+      return;
+    }
     const duration = Number(selectedDuration || 0.1);
-    const userId = auth?.currentUser.id || 'demo-user';
-    const ownerName = auth?.currentUser.username || 'You';
-    startMachine(machine.id, userId, duration, ownerName);
+    try {
+      const displayName = auth?.currentUser.username || userEmail;
+      if (auth && auth.currentUser.email !== userEmail) {
+        auth.setCurrentUser({ ...auth.currentUser, email: userEmail });
+      }
+      await startMachine(machine.id, userEmail, duration, displayName);
+      console.log('Machine started successfully');
+    } catch (error) {
+      console.error('Failed to start machine:', error);
+      alert('Failed to start machine. Please try again.');
+    }
   };
 
   const onFinish = () => {
     finishMachine(machine.id);
   };
 
-  const onReminder = () => {
-    const fromId = auth?.currentUser.id || 'demo-user';
-    const ok = sendReminder(machine.id, fromId);
-    alert(ok ? 'Reminder sent' : 'Reminder throttled');
+  const onReminder = async () => {
+    const fromEmail = auth?.currentUser.email || localStorage.getItem('userEmail');
+    if (!fromEmail) {
+      setShowEmailModal(true);
+      return;
+    }
+    const ok = await sendReminder(machine.id, fromEmail);
+    alert(ok ? 'Reminder sent' : 'Cannot send reminder yet. Please wait a minute.');
   };
 
   const bg = machine.state === 'available' ? 'bg-emerald-50' : machine.state === 'in-use' ? 'bg-rose-50' : 'bg-amber-50';
   const blink = machine.state === 'finished' ? 'blink-red' : '';
 
   return (
-    <div className={`p-4 rounded border ${bg} ${blink}`}> 
+    <>
+      <EmailModal
+        isOpen={showEmailModal}
+        onClose={() => setShowEmailModal(false)}
+        machineId={machine.id}
+        machineLabel={machine.label}
+        onSubmit={async (email) => {
+          setUserEmail(email);
+          const duration = Number(selectedDuration || 0.1);
+          const displayName = auth?.currentUser.username || email;
+          if (auth && auth.currentUser.email !== email) {
+            auth.setCurrentUser({ ...auth.currentUser, email });
+          }
+          await startMachine(machine.id, email, duration, displayName);
+        }}
+      />
+      <div className={`p-4 rounded border ${bg} ${blink}`}> 
       <div className="flex items-center justify-between">
         <div className="text-lg font-semibold">{machine.label}</div>
         <div className="text-sm text-slate-500">{machine.state}</div>
@@ -77,27 +125,37 @@ export const MachineCard = ({ machine }: { machine: Machine }) => {
                 <option key={d} value={d}>{d} min</option>
               ))}
             </select>
-            <button onClick={onStart} className="px-3 py-1 bg-emerald-600 text-white rounded">Start</button>
+            <button 
+    onClick={(e) => {
+      e.preventDefault();
+      console.log('Start button clicked');
+      onStart();
+    }} 
+    className="px-3 py-1 bg-emerald-600 text-white rounded"
+  >
+    Start
+  </button>
           </>
         )}
-        {machine.state !== 'available' && machine.ownerId !== auth?.currentUser.id && (
+        {machine.state === 'finished' && !isOwner && (
           <button onClick={onReminder} className="px-3 py-1 bg-slate-200 rounded">Send reminder</button>
         )}
-        {machine.state === 'finished' && (
+        {machine.state === 'finished' && isOwner && (
           <button onClick={onFinish} className="px-3 py-1 bg-emerald-500 text-white rounded">Mark picked up</button>
         )}
       </div>
       <div className="mt-2 text-xs text-slate-500">
-        {machine.ownerId ? (
-          machine.ownerId === auth?.currentUser.id ? (
-            <span>Owner: {machine.ownerName}</span>
+        {machine.ownerEmail ? (
+          isOwner ? (
+            <span>Owner: {machine.ownerName || machine.ownerEmail}</span>
           ) : (
-            <span>Owner: Someone</span>
+            <span>Owner: {machine.ownerName ? machine.ownerName : 'Someone'}</span>
           )
         ) : (
           <span>Owner: —</span>
         )}
       </div>
-    </div>
+      </div>
+    </>
   );
 };
