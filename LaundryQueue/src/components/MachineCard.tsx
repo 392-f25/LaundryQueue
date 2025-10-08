@@ -41,7 +41,7 @@ export const MachineCard = ({ machine }: { machine: Machine }) => {
   const [selectedDuration, setSelectedDuration] = useState<number>(machine.durationMin || 35);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(getUserEmail());
-  const DURATIONS = [0.1, 35, 45, 60];
+  const DURATIONS = [35, 45, 60];
 
   useEffect(() => {
     if (auth?.currentUser.email) {
@@ -59,7 +59,7 @@ export const MachineCard = ({ machine }: { machine: Machine }) => {
       setShowEmailModal(true);
       return;
     }
-    const duration = Number(selectedDuration || 0.1);
+  const duration = Number(selectedDuration || 35);
     try {
       const displayName = auth?.currentUser.username || userEmail;
       if (auth && auth.currentUser.email !== userEmail) {
