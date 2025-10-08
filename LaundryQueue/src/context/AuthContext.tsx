@@ -23,6 +23,16 @@ export const AuthProvider = ({ children }: any) => {
       username: 'Demo User',
       email: storedEmail,
     },
+    {
+      id: 'test-user-1',
+      username: 'Test User 1',
+      email: 'test.user1@example.com',
+    },
+    {
+      id: 'test-user-3',
+      username: 'Test User 3',
+      email: 'test.user3@example.com',
+    },
   ];
 
   const [users, setUsers] = useState<User[]>(initialUsers);

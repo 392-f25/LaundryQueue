@@ -64,6 +64,11 @@ const createInitialMachineMap = () =>
 const INITIAL_MACHINE_MAP = createInitialMachineMap();
 const INITIAL_MACHINES = Object.values(INITIAL_MACHINE_MAP);
 
+// Toggle this flag to enable the user test scenario seed. When true,
+// Washing Machine 1 (m1) will start with a job that ends 30 seconds after launch,
+// and Washing Machine 3 (m3) will start with a job that ends 60 minutes after launch.
+const ENABLE_USER_TEST_SCENARIO = true;
+
 const normalizeMachine = (id: string, value: Partial<Machine> & { ownerId?: string | null } = {}): Machine => {
   const base = INITIAL_MACHINE_MAP[id] ?? createBlankMachine(id, value.label ?? id);
 
@@ -99,6 +104,7 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
   const [notifications, setNotifications] = useState<Record<string, Array<{ id: string; message: string; ts: number }>>>({});
   const machinesRef = useRef<Machine[]>(INITIAL_MACHINES);
   const processingRef = useRef(false);
+  const pickupTimeoutsRef = useRef<Record<string, number>>({});
 
   const recordNotification = useCallback((entry: { id: string; recipientEmail: string; message: string; timestamp: number }) => {
     setNotifications((prev) => {
@@ -125,11 +131,41 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
 
         unsubscribe = subscribeToMachines((data) => {
           if (!data) {
-            const seed = createInitialMachineMap();
-            void writeMachines(seed);
-            setMachines(Object.values(seed));
-            machinesRef.current = Object.values(seed);
-            return;
+              const seed = createInitialMachineMap();
+
+              if (ENABLE_USER_TEST_SCENARIO) {
+                const now = Date.now();
+
+                // m1: running job that ends 30 seconds after launch
+                const m1: Machine = {
+                  ...seed['m1'],
+                  state: 'in-use',
+                  ownerEmail: 'test.user1@example.com',
+                  ownerName: 'Test User 1',
+                  startTime: new Date(now).toISOString(),
+                  durationMin: 0.5 / 60, // 0.5 minutes = 30 seconds
+                  expectedFinishTime: new Date(now + 10_000).toISOString(),
+                };
+
+                // m3: running job that ends 60 minutes after launch
+                const m3: Machine = {
+                  ...seed['m3'],
+                  state: 'in-use',
+                  ownerEmail: 'test.user3@example.com',
+                  ownerName: 'Test User 3',
+                  startTime: new Date(now).toISOString(),
+                  durationMin: 60,
+                  expectedFinishTime: new Date(now + 60 * 60_000).toISOString(),
+                };
+
+                seed['m1'] = m1;
+                seed['m3'] = m3;
+              }
+
+              void writeMachines(seed);
+              setMachines(Object.values(seed));
+              machinesRef.current = Object.values(seed);
+              return;
           }
 
           const normalized = Object.entries<any>(data).map(([machineId, value]) => normalizeMachine(machineId, value || {}));
@@ -358,9 +394,30 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
       }
 
       await writeMachine(id, updated);
+
+      // Schedule an automatic pickup by the owner ~15 seconds after a successful reminder.
+      // If a previous timeout exists for this machine, clear it first.
+      try {
+        if (pickupTimeoutsRef.current[id]) {
+          window.clearTimeout(pickupTimeoutsRef.current[id]);
+        }
+      } catch {}
+
+      // use window.setTimeout which returns a number in browsers
+      const handle = window.setTimeout(() => {
+        // Fire-and-forget finish; this will notify subscribers and reset the machine
+        void finishMachine(id);
+        try {
+          delete pickupTimeoutsRef.current[id];
+        } catch {}
+      }, 15_000);
+      // store numeric handle
+      // @ts-ignore - numeric timeout id
+      pickupTimeoutsRef.current[id] = handle as unknown as number;
+
       return true;
     },
-    [machines, recordNotification],
+    [machines, recordNotification, finishMachine],
   );
 
   const getNotifications = useCallback(

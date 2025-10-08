@@ -1,6 +1,7 @@
 import { useContext, useState } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import { QueueContext } from '../context/QueueContext';
+import { writeMachine } from '../utilities/firebasePlaceholder';
 
 export const Navbar = () => {
   const auth = useContext(AuthContext);
@@ -41,6 +42,53 @@ export const Navbar = () => {
         </div>
 
         <div className="flex items-center gap-6">
+          <div>
+            <button
+              title="Skip forward so the next-finishing machine finishes in 10s"
+              onClick={async () => {
+                if (!queue) return;
+                const now = Date.now();
+
+                // Find the in-use machine with the earliest expected finish time
+                const candidates = queue.machines
+                  .filter((m) => m.state === 'in-use' && m.expectedFinishTime)
+                  .map((m) => ({ m, ts: Date.parse(m.expectedFinishTime as string) }))
+                  .filter((x) => !Number.isNaN(x.ts))
+                  .sort((a, b) => a.ts - b.ts);
+
+                if (candidates.length === 0) {
+                  alert('No running machines to skip.');
+                  return;
+                }
+
+                const target = candidates[0].m;
+                const oldTargetTs = Date.parse(target.expectedFinishTime as string);
+                const newTargetTs = now + 10_000; // target will finish in 10s from now
+                const delta = newTargetTs - oldTargetTs; // may be negative (move earlier)
+
+                // Shift all in-use machines by the same delta
+                const updates = queue.machines
+                  .filter((m) => m.state === 'in-use' && m.expectedFinishTime)
+                  .map((m) => {
+                    const old = Date.parse(m.expectedFinishTime as string);
+                    if (Number.isNaN(old)) return null;
+                    return { ...m, expectedFinishTime: new Date(old + delta).toISOString() };
+                  })
+                  .filter(Boolean) as Array<Record<string, any>>;
+
+                try {
+                  await Promise.all(updates.map((m) => writeMachine(m.id, m)));
+                  alert(`${target.label} will finish in 10 seconds; all running machines shifted by ${Math.round(delta / 1000)}s.`);
+                } catch (err) {
+                  console.error('Failed to skip forward', err);
+                  alert('Failed to skip forward');
+                }
+              }}
+              className="px-2 py-1 text-sm bg-slate-100 rounded"
+            >
+              Skip →
+            </button>
+          </div>
           <div style={{ position: 'relative' }}>
             <button aria-label="Notifications" onClick={() => setOpen((s) => !s)} className="text-sm px-2 py-1">🔔 {notes.length > 0 ? `(${notes.length})` : ''}</button>
             {open && (
