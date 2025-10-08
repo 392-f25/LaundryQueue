@@ -50,7 +50,13 @@ export const MachineCard = ({ machine }: { machine: Machine }) => {
   }, [auth?.currentUser.email]);
 
   const currentUserEmail = auth?.currentUser.email || userEmail || null;
-  const isOwner = Boolean(machine.ownerEmail && currentUserEmail && machine.ownerEmail === currentUserEmail);
+  const currentUserName = auth?.currentUser.username || null;
+  
+  // Check ownership by email first, then by name as fallback
+  const isOwner = Boolean(
+    (machine.ownerEmail && currentUserEmail && machine.ownerEmail === currentUserEmail) ||
+    (machine.ownerName && currentUserName && machine.ownerName === currentUserName)
+  );
 
   const onStart = async () => {
     console.log('onStart called', { userEmail, machine });
@@ -137,8 +143,11 @@ export const MachineCard = ({ machine }: { machine: Machine }) => {
   </button>
           </>
         )}
-        {(machine.state === 'finished' || machine.state === 'in-use') && !isOwner && (
+        {machine.state === 'finished' && !isOwner && (
           <button onClick={onReminder} className="px-3 py-1 bg-slate-200 rounded">Send reminder</button>
+        )}
+        {machine.state === 'in-use' && isOwner && (
+          <button onClick={onFinish} className="px-3 py-1 bg-red-500 text-white rounded">Cancel</button>
         )}
         {machine.state === 'finished' && isOwner && (
           <button onClick={onFinish} className="px-3 py-1 bg-emerald-500 text-white rounded">Mark picked up</button>

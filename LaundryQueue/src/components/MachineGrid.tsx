@@ -9,20 +9,13 @@ export const MachineGrid = () => {
 
   if (!ctx) return null;
   const { machines } = ctx;
-
-  console.log('Selected type:', selectedType);
-  console.log('All machines:', machines);
   
   const filteredMachines = machines.filter(m => {
     if (selectedType === 'all') return true;
     const isWasher = m.label.startsWith('W');
     const isDryer = m.label.startsWith('D');
-    const shouldShow = selectedType === 'washer' ? isWasher : isDryer;
-    console.log(`Machine ${m.label}: ${shouldShow ? 'showing' : 'hiding'}`);
-    return shouldShow;
+    return selectedType === 'washer' ? isWasher : isDryer;
   });
-
-  console.log('Filtered machines:', filteredMachines);
 
   return (
     <div>

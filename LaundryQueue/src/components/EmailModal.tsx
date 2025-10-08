@@ -51,7 +51,7 @@ export const EmailModal: React.FC<EmailModalProps> = ({
       <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full">
         <h2 className="text-xl font-bold mb-4">Enter Your Email</h2>
         <p className="text-gray-600 mb-4">
-          To start using {machineLabel}, we need your email to send notifications when your laundry is done.
+          To start using {machineLabel}, we need your email to send notifications when your wash cycle is done.
         </p>
         <form onSubmit={handleSubmit}>
           <input

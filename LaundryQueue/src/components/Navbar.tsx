@@ -14,7 +14,8 @@ export const Navbar = () => {
   const onAddUser = () => {
     const name = prompt('New user name');
     if (name && name.trim()) {
-      auth?.addUser(name.trim());
+      const email = prompt('Email address (optional, but recommended for notifications)');
+      auth?.addUser(name.trim(), email?.trim() || undefined);
     }
   };
 
@@ -38,10 +39,12 @@ export const Navbar = () => {
     <header className="bg-white shadow">
       <div className="max-w-5xl mx-auto p-4 flex items-center justify-between">
         <div>
-          <div className="text-lg font-medium">Laundry Queue</div>
+          <div className="text-lg font-medium">WasherWatch</div>
           <div className="text-sm text-slate-600">Demo — local mock backend</div>
           <div className="text-xs text-slate-500 mt-1 break-all">
-            {currentUserEmail ? `Email: ${currentUserEmail}` : 'Email not set'}
+            {currentUserEmail ? `Email: ${currentUserEmail}` : (
+              <span className="text-amber-600">⚠️ Email not set - notifications disabled</span>
+            )}
           </div>
         </div>
 
