@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+  "emulators:start": "firebase emulators:start --only database",
     "build": "npx tsc && vite build",
     "lint": "eslint .",
     "preview": "vite preview",

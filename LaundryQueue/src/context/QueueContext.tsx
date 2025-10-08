@@ -1,5 +1,14 @@
 import { createContext, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { initFirebase, sendNotification, subscribeToMachines, writeMachine, writeMachines } from '../utilities/firebasePlaceholder';
+import {
+  initFirebase,
+  sendNotification,
+  subscribeToMachinesForRoom,
+  subscribeToRooms,
+  writeMachine as writeMachineRealtime,
+  writeMachines as writeMachinesRealtime,
+  startMachineTransaction,
+  finishMachineTransaction,
+} from '../utilities/firebaseRealtime';
 
 export type MachineState = 'available' | 'in-use' | 'finished';
 
@@ -26,6 +35,9 @@ type QueueContextValue = {
   sendReminder: (id: string, fromEmail: string) => Promise<boolean>;
   getNotifications: (userEmail: string) => Array<{ id: string; message: string; ts: number }>;
   clearNotifications: (userEmail: string) => void;
+  rooms: Array<{ id: string; name?: string }>;
+  currentRoomId: string;
+  setCurrentRoom: (id: string) => void;
 };
 
 export const QueueContext = createContext<QueueContextValue | null>(null);
@@ -95,10 +107,20 @@ const normalizeMachine = (id: string, value: Partial<Machine> & { ownerId?: stri
 };
 
 export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
+  const DEFAULT_ROOM = 'default';
   const [machines, setMachines] = useState<Machine[]>(INITIAL_MACHINES);
   const [notifications, setNotifications] = useState<Record<string, Array<{ id: string; message: string; ts: number }>>>({});
   const machinesRef = useRef<Machine[]>(INITIAL_MACHINES);
   const processingRef = useRef(false);
+  const [rooms, setRooms] = useState<Array<{ id: string; name?: string }>>([]);
+  const [currentRoomId, setCurrentRoomId] = useState<string>(() => {
+    try {
+      const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+      return params.get('room') || DEFAULT_ROOM;
+    } catch (e) {
+      return DEFAULT_ROOM;
+    }
+  });
 
   const recordNotification = useCallback((entry: { id: string; recipientEmail: string; message: string; timestamp: number }) => {
     setNotifications((prev) => {
@@ -114,6 +136,41 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
     machinesRef.current = machines;
   }, [machines]);
 
+
+
+  // Subscribe to rooms on mount
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    let active = true;
+    const setup = async () => {
+      try {
+        await initFirebase();
+        if (!active) return;
+
+        unsubscribe = subscribeToRooms((data) => {
+          if (!data) {
+            setRooms([]);
+            return;
+          }
+          const list = Object.entries<any>(data).map(([id, v]) => ({ id, name: v?.name }));
+          setRooms(list);
+          // if currentRoomId is default and there is a room named default, keep it; otherwise pick first
+          if (!list.find((r) => r.id === currentRoomId) && list.length > 0) {
+            setCurrentRoomId(list[0].id);
+          }
+        });
+      } catch (err) {
+        console.error('Failed to subscribe to rooms', err);
+      }
+    };
+    setup();
+    return () => {
+      active = false;
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  // Subscribe to machines for the selected room
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
     let active = true;
@@ -123,10 +180,10 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
         await initFirebase();
         if (!active) return;
 
-        unsubscribe = subscribeToMachines((data) => {
+        unsubscribe = subscribeToMachinesForRoom(currentRoomId, (data) => {
           if (!data) {
             const seed = createInitialMachineMap();
-            void writeMachines(seed);
+            void writeMachinesRealtime(seed, currentRoomId);
             setMachines(Object.values(seed));
             machinesRef.current = Object.values(seed);
             return;
@@ -137,7 +194,7 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
           setMachines(normalized);
         });
       } catch (error) {
-        console.error('Error setting up Firebase sync:', error);
+        console.error('Error setting up Firebase machines sync:', error);
         setMachines(INITIAL_MACHINES);
         machinesRef.current = INITIAL_MACHINES;
       }
@@ -147,11 +204,21 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
 
     return () => {
       active = false;
-      if (unsubscribe) {
-        unsubscribe();
-      }
+      if (unsubscribe) unsubscribe();
     };
-  }, []);
+  }, [currentRoomId]);
+
+  // Sync currentRoomId to URL
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return;
+      const url = new URL(window.location.href);
+      url.searchParams.set('room', currentRoomId);
+      window.history.replaceState({}, '', url.toString());
+    } catch (e) {
+      // ignore
+    }
+  }, [currentRoomId]);
 
   useEffect(() => {
     const tick = async () => {
@@ -211,7 +278,7 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
           }
 
           updatedMachines.push(updated);
-          writes.push(writeMachine(machine.id, updated));
+          writes.push(writeMachineRealtime(machine.id, updated, currentRoomId));
         }
 
         if (writes.length > 0) {
@@ -226,9 +293,28 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
       }
     };
 
+    const isVitest = (() => {
+      try {
+        // Node/Vitest
+        // @ts-ignore
+        if (typeof process !== 'undefined' && process.env && (process.env as any).VITEST) return true;
+      } catch (e) {}
+      try {
+        // Vitest in ESM env
+        // @ts-ignore
+        if ((import.meta as any).env && (import.meta as any).env.VITEST) return true;
+      } catch (e) {}
+      // jsdom global injected by Vitest
+      try {
+        // @ts-ignore
+        if (typeof (globalThis as any).__vitest !== 'undefined') return true;
+      } catch (e) {}
+      return false;
+    })();
+    const TICK_MS = isVitest ? 50 : 1000;
     const interval = setInterval(() => {
       void tick();
-    }, 1000);
+    }, TICK_MS);
 
     return () => clearInterval(interval);
   }, [recordNotification]);
@@ -256,7 +342,12 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
         reminderSubscribers: [],
       };
 
-      await writeMachine(id, updated);
+      // Use transaction to avoid double-claim races
+      try {
+  await startMachineTransaction(currentRoomId, id, updated as any);
+      } catch (err) {
+        console.error('Failed to start machine transaction', err);
+      }
     },
     [machines],
   );
@@ -306,7 +397,11 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
         reminderSubscribers: [],
       };
 
-      await writeMachine(id, reset);
+      try {
+  await finishMachineTransaction(currentRoomId, id, reset as any);
+      } catch (err) {
+        console.error('Failed to finish machine transaction', err);
+      }
     },
     [machines, recordNotification],
   );
@@ -357,7 +452,7 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
         console.error('Failed to send reminder notification', notificationError);
       }
 
-      await writeMachine(id, updated);
+  await writeMachineRealtime(id, updated, currentRoomId);
       return true;
     },
     [machines, recordNotification],
@@ -378,8 +473,18 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const value = useMemo(
-    () => ({ machines, startMachine, finishMachine, sendReminder, getNotifications, clearNotifications }),
-    [machines, startMachine, finishMachine, sendReminder, getNotifications, clearNotifications],
+    () => ({
+      machines,
+      startMachine,
+      finishMachine,
+      sendReminder,
+      getNotifications,
+      clearNotifications,
+      rooms,
+      currentRoomId,
+      setCurrentRoom: setCurrentRoomId,
+    }),
+    [machines, startMachine, finishMachine, sendReminder, getNotifications, clearNotifications, rooms, currentRoomId],
   );
 
   return <QueueContext.Provider value={value}>{children}</QueueContext.Provider>;

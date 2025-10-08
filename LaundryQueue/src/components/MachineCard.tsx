@@ -137,7 +137,7 @@ export const MachineCard = ({ machine }: { machine: Machine }) => {
   </button>
           </>
         )}
-        {machine.state === 'finished' && !isOwner && (
+        {(machine.state === 'finished' || machine.state === 'in-use') && !isOwner && (
           <button onClick={onReminder} className="px-3 py-1 bg-slate-200 rounded">Send reminder</button>
         )}
         {machine.state === 'finished' && isOwner && (

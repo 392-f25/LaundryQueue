@@ -3,7 +3,7 @@ import { QueueProvider } from './context/QueueContext';
 import { AuthProvider } from './context/AuthContext';
 import { Navbar } from './components/Navbar';
 import { MachineGrid } from './components/MachineGrid';
-import { initFirebase } from './utilities/firebasePlaceholder';
+import { initFirebase } from './utilities/firebaseRealtime';
 
 // Create a Firebase context to ensure initialization
 const FirebaseProvider = ({ children }: { children: React.ReactNode }) => {

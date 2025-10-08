@@ -23,6 +23,11 @@ export const Navbar = () => {
   const currentUserEmail = auth?.currentUser.email || null;
   const notes = currentUserEmail ? queue?.getNotifications(currentUserEmail) || [] : [];
 
+  const onRoomChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const v = e.target.value;
+    if (queue && queue.setCurrentRoom) queue.setCurrentRoom(v);
+  };
+
   const onClear = () => {
     if (!currentUserEmail) return;
     queue?.clearNotifications(currentUserEmail);
@@ -63,6 +68,14 @@ export const Navbar = () => {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <select aria-label="Select room" onChange={onRoomChange} value={queue?.currentRoomId || ''} className="text-sm px-2 py-1">
+              {queue?.rooms && queue.rooms.length > 0 ? (
+                queue.rooms.map((r) => <option key={r.id} value={r.id}>{r.name ?? r.id}</option>)
+              ) : (
+                <option value="default">default</option>
+              )}
+            </select>
+
             <select aria-label="Switch user" onChange={onChange} value={auth?.currentUser.id} className="text-sm px-2 py-1">
               {auth?.users.map((u) => (
                 <option key={u.id} value={u.id}>{u.username}</option>
