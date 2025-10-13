@@ -60,3 +60,43 @@ html, body, #root {
   grid-template-rows: repeat(2, auto);
   gap: 1rem;
 }
+
+/* ----- notifications (colored squares, top-right) ----- */
+.toast-container {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 9999;
+  pointer-events: none; /* don’t block clicks below */
+}
+
+.toast-square {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+  animation: toast-in 160ms ease-out, toast-fade 300ms ease-in var(--toast-life, 3s) forwards;
+  opacity: 0.96;
+  pointer-events: auto;
+}
+
+@keyframes toast-in {
+  from { transform: translateY(-8px) scale(0.9); opacity: 0; }
+  to   { transform: translateY(0)    scale(1);   opacity: 0.96; }
+}
+
+@keyframes toast-fade {
+  to { opacity: 0; transform: translateY(-6px); }
+}
+
+/* screen-reader-only helper (already common in many projects; included here if missing) */
+.sr-only {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 1px, 1px);
+  white-space: nowrap; border: 0;
+}

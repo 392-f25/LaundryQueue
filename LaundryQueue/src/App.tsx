@@ -4,6 +4,8 @@ import { AuthProvider } from './context/AuthContext';
 import { Navbar } from './components/Navbar';
 import { MachineGrid } from './components/MachineGrid';
 import { initFirebase } from './utilities/firebaseRealtime';
+import { Notifications} from './components/Notifications';
+import DevAuthSwitcher from './components/DevAuthSwitcher'
 
 // Create a Firebase context to ensure initialization
 const FirebaseProvider = ({ children }: { children: React.ReactNode }) => {
@@ -76,7 +78,9 @@ export default function App() {
         <QueueProvider>
           <div className="min-h-screen bg-slate-50">
             <Navbar />
+            <Notifications durationMs={3500} maxStack={5} />
             <main className="p-4 max-w-5xl mx-auto">
+              {import.meta.env.DEV && <DevAuthSwitcher />}
               <h1 className="text-2xl font-semibold mb-4">Laundry Queue</h1>
               <MachineGrid />
             </main>

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   initFirebase,
-  sendNotification,
+  sendNotificationToUid,
   subscribeToMachinesForRoom,
   subscribeToRooms,
   writeMachine as writeMachineRealtime,
@@ -9,6 +9,7 @@ import {
   startMachineTransaction,
   finishMachineTransaction,
 } from '../utilities/firebaseRealtime';
+import { getAuth } from 'firebase/auth';
 
 export type MachineState = 'available' | 'in-use' | 'finished';
 
@@ -16,8 +17,14 @@ export type Machine = {
   id: string;
   label: string;
   state: MachineState;
+
+  // existing (email-based) fields
   ownerEmail?: string | null;
   ownerName?: string | null;
+
+  // NEW: uid-based ownership (preferred)
+  ownerUid?: string | null;
+
   startTime?: string | null;
   durationMin?: number | null;
   expectedFinishTime?: string | null;
@@ -25,7 +32,12 @@ export type Machine = {
   completionNotifiedAt?: number | null;
   lastReminderSent?: number | null;
   reminderCount?: number | null;
+
+  // existing (email-based) subscribers
   reminderSubscribers?: string[];
+
+  // NEW: uid-based subscribers (preferred)
+  reminderSubscribersUid?: string[];
 };
 
 type QueueContextValue = {
@@ -33,8 +45,8 @@ type QueueContextValue = {
   startMachine: (id: string, userEmail: string, durationMin: number, ownerName?: string) => Promise<void>;
   finishMachine: (id: string) => Promise<void>;
   sendReminder: (id: string, fromEmail: string) => Promise<boolean>;
-  getNotifications: (userEmail: string) => Array<{ id: string; message: string; ts: number }>;
-  clearNotifications: (userEmail: string) => void;
+  getNotifications: (userKey: string) => Array<{ id: string; message: string; ts: number }>;
+  clearNotifications: (userKey: string) => void;
   rooms: Array<{ id: string; name?: string }>;
   currentRoomId: string;
   setCurrentRoom: (id: string) => void;
@@ -57,6 +69,7 @@ const createBlankMachine = (id: string, label: string): Machine => ({
   state: 'available',
   ownerEmail: null,
   ownerName: null,
+  ownerUid: null,
   startTime: null,
   durationMin: null,
   expectedFinishTime: null,
@@ -65,6 +78,7 @@ const createBlankMachine = (id: string, label: string): Machine => ({
   lastReminderSent: null,
   reminderCount: 0,
   reminderSubscribers: [],
+  reminderSubscribersUid: [],
 });
 
 const createInitialMachineMap = () =>
@@ -76,10 +90,14 @@ const createInitialMachineMap = () =>
 const INITIAL_MACHINE_MAP = createInitialMachineMap();
 const INITIAL_MACHINES = Object.values(INITIAL_MACHINE_MAP);
 
+// normalize from RTDB into Machine (accepts extra fields safely)
 const normalizeMachine = (id: string, value: Partial<Machine> & { ownerId?: string | null } = {}): Machine => {
   const base = INITIAL_MACHINE_MAP[id] ?? createBlankMachine(id, value.label ?? id);
 
-  const ownerEmail = value.ownerEmail ?? value.ownerId ?? base.ownerEmail;
+  // keep backward-compat: sometimes backend used ownerId (email). Prefer args if present.
+  const ownerEmail = value.ownerEmail ?? (value as any).ownerId ?? base.ownerEmail;
+  const ownerUid = value.ownerUid ?? base.ownerUid ?? null;
+
   const startTime = value.startTime ?? base.startTime;
   const durationMin = value.durationMin ?? base.durationMin;
 
@@ -94,13 +112,17 @@ const normalizeMachine = (id: string, value: Partial<Machine> & { ownerId?: stri
     id,
     label: value.label ?? base.label,
     ownerEmail,
-    ownerName: value.ownerName ?? ownerEmail,
+    ownerUid,
+    ownerName: value.ownerName ?? ownerEmail ?? ownerUid ?? base.ownerName,
     startTime,
     durationMin,
     expectedFinishTime,
     reminderSubscribers: Array.isArray(value.reminderSubscribers)
       ? value.reminderSubscribers.filter(Boolean)
       : base.reminderSubscribers,
+    reminderSubscribersUid: Array.isArray(value.reminderSubscribersUid)
+      ? value.reminderSubscribersUid.filter(Boolean)
+      : base.reminderSubscribersUid,
     reminderCount: value.reminderCount ?? base.reminderCount,
     lastReminderSent: value.lastReminderSent ?? base.lastReminderSent,
   } satisfies Machine;
@@ -117,17 +139,18 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
       return params.get('room') || DEFAULT_ROOM;
-    } catch (e) {
+    } catch {
       return DEFAULT_ROOM;
     }
   });
 
-  const recordNotification = useCallback((entry: { id: string; recipientEmail: string; message: string; timestamp: number }) => {
+  // recordNotification keeps your dev UI list in sync (key by email or uid string)
+  const recordNotification = useCallback((entry: { id: string; recipientKey: string; message: string; timestamp: number }) => {
     setNotifications((prev) => {
-      const current = prev[entry.recipientEmail] || [];
+      const current = prev[entry.recipientKey] || [];
       return {
         ...prev,
-        [entry.recipientEmail]: [...current, { id: entry.id, message: entry.message, ts: entry.timestamp }],
+        [entry.recipientKey]: [...current, { id: entry.id, message: entry.message, ts: entry.timestamp }],
       };
     });
   }, []);
@@ -135,8 +158,6 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     machinesRef.current = machines;
   }, [machines]);
-
-
 
   // Subscribe to rooms on mount
   useEffect(() => {
@@ -154,7 +175,6 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
           }
           const list = Object.entries<any>(data).map(([id, v]) => ({ id, name: v?.name }));
           setRooms(list);
-          // if currentRoomId is default and there is a room named default, keep it; otherwise pick first
           if (!list.find((r) => r.id === currentRoomId) && list.length > 0) {
             setCurrentRoomId(list[0].id);
           }
@@ -215,11 +235,12 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
       const url = new URL(window.location.href);
       url.searchParams.set('room', currentRoomId);
       window.history.replaceState({}, '', url.toString());
-    } catch (e) {
+    } catch {
       // ignore
     }
   }, [currentRoomId]);
 
+  // Timer: flip in-use -> finished, send completion notification (UID-based)
   useEffect(() => {
     const tick = async () => {
       if (processingRef.current) return;
@@ -242,8 +263,8 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
           const finishTs = machine.expectedFinishTime
             ? Date.parse(machine.expectedFinishTime)
             : machine.startTime && machine.durationMin
-                ? new Date(machine.startTime).getTime() + machine.durationMin * 60_000
-                : null;
+              ? new Date(machine.startTime).getTime() + (machine.durationMin ?? 0) * 60_000
+              : null;
 
           if (!finishTs || now < finishTs) {
             updatedMachines.push(machine);
@@ -260,17 +281,24 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
             completionNotifiedAt: machine.completionNotifiedAt ?? now,
           };
 
-          if (!machine.completionNotifiedAt && machine.ownerEmail) {
+          // Send completion notification by UID if we know the ownerUid
+          if (!machine.completionNotifiedAt && machine.ownerUid) {
             const message = `Your laundry in ${machine.label} is done!`;
             try {
-              const id = await sendNotification({
-                recipientEmail: machine.ownerEmail,
+              const id = await sendNotificationToUid({
+                recipientUid: machine.ownerUid,
                 message,
                 timestamp: now,
                 machineId: machine.id,
                 type: 'completion',
               });
-              recordNotification({ id, recipientEmail: machine.ownerEmail, message, timestamp: now });
+              // record under uid if available, else fallback to email key
+              recordNotification({
+                id,
+                recipientKey: machine.ownerUid,
+                message,
+                timestamp: now,
+              });
               updated.completionNotifiedAt = now;
             } catch (notificationError) {
               console.error('Failed to send completion notification', notificationError);
@@ -295,29 +323,26 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
 
     const isVitest = (() => {
       try {
-        // Node/Vitest
         // @ts-ignore
         if (typeof process !== 'undefined' && process.env && (process.env as any).VITEST) return true;
-      } catch (e) {}
+      } catch {}
       try {
-        // Vitest in ESM env
         // @ts-ignore
         if ((import.meta as any).env && (import.meta as any).env.VITEST) return true;
-      } catch (e) {}
-      // jsdom global injected by Vitest
+      } catch {}
       try {
         // @ts-ignore
         if (typeof (globalThis as any).__vitest !== 'undefined') return true;
-      } catch (e) {}
+      } catch {}
       return false;
     })();
-    const TICK_MS = isVitest ? 50 : 1000;
-    const interval = setInterval(() => {
-      void tick();
-    }, TICK_MS);
 
+    const TICK_MS = isVitest ? 50 : 1000;
+    const interval = setInterval(() => void tick(), TICK_MS);
     return () => clearInterval(interval);
   }, [recordNotification]);
+
+  // ---- Actions ----
 
   const startMachine = useCallback(
     async (id: string, userEmail: string, durationMin: number, ownerName?: string) => {
@@ -326,12 +351,14 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
 
       const now = Date.now();
       const expectedFinishTime = new Date(now + durationMin * 60_000).toISOString();
+      const auth = getAuth();
 
       const updated: Machine = {
         ...machine,
         state: 'in-use',
         ownerEmail: userEmail,
         ownerName: ownerName || userEmail,
+        ownerUid: auth.currentUser?.uid ?? null, // UID-written locally (RTDB txn should enforce too)
         startTime: new Date(now).toISOString(),
         durationMin,
         expectedFinishTime,
@@ -339,17 +366,18 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
         completionNotifiedAt: null,
         lastReminderSent: null,
         reminderCount: 0,
-        reminderSubscribers: [],
+        reminderSubscribers: machine.reminderSubscribers ?? [],
+        reminderSubscribersUid: machine.reminderSubscribersUid ?? [],
       };
 
-      // Use transaction to avoid double-claim races
+      // Use transaction to avoid double-claim races (server will also set/validate ownerUid via rules)
       try {
-  await startMachineTransaction(currentRoomId, id, updated as any);
+        await startMachineTransaction(currentRoomId, id, updated as any);
       } catch (err) {
         console.error('Failed to start machine transaction', err);
       }
     },
-    [machines],
+    [machines, currentRoomId],
   );
 
   const finishMachine = useCallback(
@@ -358,23 +386,23 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
       if (!machine) return;
 
       const now = Date.now();
-      const subscribers = Array.from(new Set(machine.reminderSubscribers || []))
-        .filter((email) => email && email !== machine.ownerEmail);
 
-      if (subscribers.length > 0) {
+      // Notify subscribers (UID-based only)
+      const subscriberUids = Array.from(new Set(machine.reminderSubscribersUid || []));
+
+      if (subscriberUids.length > 0) {
         await Promise.all(
-          subscribers.map(async (email) => {
+          subscriberUids.map(async (uid) => {
             const message = `${machine.label} is now available.`;
             try {
-              const notifId = await sendNotification({
-                recipientEmail: email,
-                senderEmail: machine.ownerEmail || undefined,
+              const notifId = await sendNotificationToUid({
+                recipientUid: uid,
                 message,
                 timestamp: now,
                 machineId: machine.id,
                 type: 'pickup',
               });
-              recordNotification({ id: notifId, recipientEmail: email, message, timestamp: now });
+              recordNotification({ id: notifId, recipientKey: uid, message, timestamp: now });
             } catch (notificationError) {
               console.error('Failed to send pickup notification', notificationError);
             }
@@ -387,6 +415,7 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
         state: 'available',
         ownerEmail: null,
         ownerName: null,
+        ownerUid: null,
         startTime: null,
         durationMin: null,
         expectedFinishTime: null,
@@ -395,15 +424,16 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
         lastReminderSent: null,
         reminderCount: 0,
         reminderSubscribers: [],
+        reminderSubscribersUid: [],
       };
 
       try {
-  await finishMachineTransaction(currentRoomId, id, reset as any);
+        await finishMachineTransaction(currentRoomId, id, reset as any);
       } catch (err) {
         console.error('Failed to finish machine transaction', err);
       }
     },
-    [machines, recordNotification],
+    [machines, recordNotification, currentRoomId],
   );
 
   const REMINDER_THROTTLE_MS = 60_000;
@@ -411,63 +441,65 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
   const sendReminder = useCallback(
     async (id: string, fromEmail: string) => {
       const machine = machines.find((m) => m.id === id);
-      if (!machine || !machine.ownerEmail) return false;
-      if (machine.ownerEmail === fromEmail) return false;
+      if (!machine) return false;
 
       const now = Date.now();
       const finishTs = machine.expectedFinishTime ? Date.parse(machine.expectedFinishTime) : null;
       const timerExpired = finishTs !== null && now >= finishTs;
       const readyToRemind = machine.state === 'finished' || timerExpired;
-      if (!readyToRemind) {
-        return false;
-      }
+      if (!readyToRemind) return false;
+      if (machine.lastReminderSent && now - machine.lastReminderSent < REMINDER_THROTTLE_MS) return false;
 
-      if (machine.lastReminderSent && now - machine.lastReminderSent < REMINDER_THROTTLE_MS) {
-        return false;
-      }
-
-      const subscribers = new Set(machine.reminderSubscribers || []);
-      subscribers.add(fromEmail);
+      // Build UID-based subscriber set (include the caller if signed-in)
+      const auth = getAuth();
+      const callerUid = auth.currentUser?.uid ?? null;
+      const subscribersUid = new Set<string>(machine.reminderSubscribersUid || []);
+      if (callerUid) subscribersUid.add(callerUid);
 
       const updated: Machine = {
         ...machine,
         lastReminderSent: now,
         reminderCount: (machine.reminderCount ?? 0) + 1,
-        reminderSubscribers: Array.from(subscribers),
+        reminderSubscribersUid: Array.from(subscribersUid),
       };
 
-      const message = `Someone is waiting for ${machine.label}. Please pick up your laundry.`;
-
-      try {
-        const notifId = await sendNotification({
-          recipientEmail: machine.ownerEmail,
-          senderEmail: fromEmail,
-          message,
-          timestamp: now,
-          machineId: machine.id,
-          type: 'reminder',
-        });
-        recordNotification({ id: notifId, recipientEmail: machine.ownerEmail, message, timestamp: now });
-      } catch (notificationError) {
-        console.error('Failed to send reminder notification', notificationError);
+      // Send to owner (UID) if known
+      if (machine.ownerUid) {
+        const message = `Someone is waiting for ${machine.label}. Please pick up your laundry.`;
+        try {
+          const notifId = await sendNotificationToUid({
+            recipientUid: machine.ownerUid,
+            message,
+            timestamp: now,
+            machineId: machine.id,
+            type: 'reminder',
+          });
+          recordNotification({ id: notifId, recipientKey: machine.ownerUid, message, timestamp: now });
+        } catch (notificationError) {
+          console.error('Failed to send reminder notification', notificationError);
+        }
+      } else {
+        // No ownerUid → we can’t send by UID. (Skip to avoid calling removed email API.)
+        console.warn('[sendReminder] ownerUid missing, skipped sending by UID');
       }
 
-  await writeMachineRealtime(id, updated, currentRoomId);
+      await writeMachineRealtime(id, updated, currentRoomId);
       return true;
     },
-    [machines, recordNotification],
+    [machines, recordNotification, currentRoomId],
   );
 
+  // For the in-app dev inbox: accept either uid or email as the lookup key
   const getNotifications = useCallback(
-    (userEmail: string) => notifications[userEmail] || [],
+    (userKey: string) => notifications[userKey] || [],
     [notifications],
   );
 
-  const clearNotifications = useCallback((userEmail: string) => {
+  const clearNotifications = useCallback((userKey: string) => {
     setNotifications((prev) => {
-      if (!prev[userEmail]) return prev;
+      if (!prev[userKey]) return prev;
       const next = { ...prev };
-      next[userEmail] = [];
+      next[userKey] = [];
       return next;
     });
   }, []);
