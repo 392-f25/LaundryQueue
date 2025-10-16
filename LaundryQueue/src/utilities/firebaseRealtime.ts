@@ -11,8 +11,11 @@ import {
   child,
   runTransaction,
 } from 'firebase/database';
+import { useEffect, useState } from 'react';
+import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, type Auth, type NextOrObserver, type User } from 'firebase/auth';
 
 let db: ReturnType<typeof getDatabase> | null = null;
+let authInstance: ReturnType<typeof getAuth> | null = null;
 
 function ensureDb() {
   if (!db) throw new Error('Realtime DB not initialized - call initFirebase() first');
@@ -20,7 +23,7 @@ function ensureDb() {
 }
 
 export function initFirebase() {
-  if (db) return db;
+  if (db) return { db, auth: authInstance ?? getAuth() };
 
   const firebaseConfig = {
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -33,6 +36,8 @@ export function initFirebase() {
 
   const app = initializeApp(firebaseConfig as any);
   db = getDatabase(app);
+  const auth = getAuth(app);
+  authInstance = auth;
 
   try {
     const dbUrl = firebaseConfig.databaseURL;
@@ -51,13 +56,49 @@ export function initFirebase() {
   } catch (err) {
     console.warn('[firebaseRealtime] init logging failed', err);
   }
-  return db;
+  return { db, auth };
 }
 
-// Helper to normalize emails into valid path segments
-function encodeEmail(email: string) {
-  return encodeURIComponent(email).replace(/\./g, '%2E');
+export const signInWithGoogle = (auth: Auth) => {
+  signInWithPopup(auth, new GoogleAuthProvider());
+};
+
+const firebaseSignOut = (auth: Auth) => signOut(auth);
+
+export { firebaseSignOut as signOut };
+
+export interface AuthState {
+  user: User | null,
+  isAuthenticated: boolean,
+  isInitialLoading: boolean
 }
+
+export const addAuthStateListener = (fn: NextOrObserver<User>, auth: Auth) => (
+  onAuthStateChanged(auth, fn)
+);
+
+
+export const useAuthState = (auth:Auth) => {
+  // accept missing auth gracefully
+  const [user, setUser] = useState<User | null>(auth?.currentUser ?? null);
+  const [isInitialLoading, setIsInitialLoading] = useState<boolean>(!!auth);
+  const isAuthenticated = !!user;
+
+  useEffect(() => {
+    if (!auth) {
+      setIsInitialLoading(false);
+      return;
+    }
+    const unsub = addAuthStateListener((u) => {
+      setUser(u);
+      setIsInitialLoading(false);
+    }, auth);
+    return () => unsub();
+  }, [auth]);
+
+  return { user, isAuthenticated, isInitialLoading };
+};
+
 
 /**
  * Subscribe to all machines stored at `/machines` in Realtime DB.
@@ -128,44 +169,6 @@ export async function writeMachines(map: Record<string, any>, roomId?: string) {
 }
 
 /**
- * Minimal sendNotification implementation for now: stores a notification under
- * `/notifications/{encodedEmail}/{notifId}` and returns the generated id.
- * This is intentionally simple while notifications are being iterated separately.
- */
-export async function sendNotification(payload: {
-  recipientEmail: string;
-  senderEmail?: string | null;
-  message: string;
-  timestamp: number;
-  machineId?: string | null;
-  type?: string | null;
-}) {
-  const database = db; // allow null case for tests
-  // deterministic fallback id when DB isn't initialized
-  if (!database) {
-    return `mock-${payload.timestamp}-${Math.random().toString(36).slice(2, 8)}`;
-  }
-
-  const emailKey = encodeEmail(payload.recipientEmail);
-  // push() generates a new child reference and key
-  const pushRef = push(ref(database, `notifications/${emailKey}`));
-  const id = pushRef.key as string;
-  const record = {
-    id,
-    recipientEmail: payload.recipientEmail,
-    senderEmail: payload.senderEmail || null,
-    message: payload.message,
-    ts: payload.timestamp,
-    machineId: payload.machineId || null,
-    type: payload.type || null,
-    createdAt: Date.now(),
-  };
-  // write the record
-  await set(pushRef, record);
-  return id;
-}
-
-/**
  * Helper: fetch machines for a room (returns map or null)
  */
 export async function fetchMachinesForRoom(roomId: string) {
@@ -221,12 +224,57 @@ export async function finishMachineTransaction(roomId: string, machineId: string
   }
 }
 
+// Helper to normalize emails into valid path segments
+function encodeEmail(email: string) {
+  return encodeURIComponent(email).replace(/\./g, '%2E');
+}
+
+/**
+ * Minimal sendNotification implementation for now: stores a notification under
+ * `/notifications/{encodedEmail}/{notifId}` and returns the generated id.
+ * This is intentionally simple while notifications are being iterated separately.
+ */
+export async function sendNotification(payload: {
+  recipientEmail: string;
+  senderEmail?: string | null;
+  message: string;
+  timestamp: number;
+  machineId?: string | null;
+  type?: string | null;
+}) {
+  // const database = db; // allow null case for tests
+  // // deterministic fallback id when DB isn't initialized
+  // if (!database) {
+  //   return `mock-${payload.timestamp}-${Math.random().toString(36).slice(2, 8)}`;
+  // }
+
+  // const emailKey = encodeEmail(payload.recipientEmail);
+  // // push() generates a new child reference and key
+  // const pushRef = push(ref(database, `notifications/${emailKey}`));
+  // const id = pushRef.key as string;
+  // const record = {
+  //   id,
+  //   recipientEmail: payload.recipientEmail,
+  //   senderEmail: payload.senderEmail || null,
+  //   message: payload.message,
+  //   ts: payload.timestamp,
+  //   machineId: payload.machineId || null,
+  //   type: payload.type || null,
+  //   createdAt: Date.now(),
+  // };
+  // // write the record
+  // await set(pushRef, record);
+  // return id;
+  
+}
+
+
 export default {
-  initFirebase,
   subscribeToMachines,
+  initFirebase,
   subscribeToRooms,
   writeMachine,
   writeMachines,
-  sendNotification,
   fetchMachinesForRoom,
+  sendNotification,
 };

@@ -261,20 +261,20 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
           };
 
           if (!machine.completionNotifiedAt && machine.ownerEmail) {
-            const message = `Your laundry in ${machine.label} is done!`;
-            try {
-              const id = await sendNotification({
-                recipientEmail: machine.ownerEmail,
-                message,
-                timestamp: now,
-                machineId: machine.id,
-                type: 'completion',
-              });
-              recordNotification({ id, recipientEmail: machine.ownerEmail, message, timestamp: now });
-              updated.completionNotifiedAt = now;
-            } catch (notificationError) {
-              console.error('Failed to send completion notification', notificationError);
-            }
+            // const message = `Your laundry in ${machine.label} is done!`;
+            // try {
+            //   const id = await sendNotification({
+            //     recipientEmail: machine.ownerEmail,
+            //     message,
+            //     timestamp: now,
+            //     machineId: machine.id,
+            //     type: 'completion',
+            //   });
+            //   recordNotification({ id, recipientEmail: machine.ownerEmail, message, timestamp: now });
+            //   updated.completionNotifiedAt = now;
+            // } catch (notificationError) {
+            //   console.error('Failed to send completion notification', notificationError);
+            // }
           }
 
           updatedMachines.push(updated);
@@ -365,19 +365,19 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
         await Promise.all(
           subscribers.map(async (email) => {
             const message = `${machine.label} is now available.`;
-            try {
-              const notifId = await sendNotification({
-                recipientEmail: email,
-                senderEmail: machine.ownerEmail || undefined,
-                message,
-                timestamp: now,
-                machineId: machine.id,
-                type: 'pickup',
-              });
-              recordNotification({ id: notifId, recipientEmail: email, message, timestamp: now });
-            } catch (notificationError) {
-              console.error('Failed to send pickup notification', notificationError);
-            }
+            // try {
+            //   const notifId = await sendNotification({
+            //     recipientEmail: email,
+            //     senderEmail: machine.ownerEmail || undefined,
+            //     message,
+            //     timestamp: now,
+            //     machineId: machine.id,
+            //     type: 'pickup',
+            //   });
+            //   recordNotification({ id: notifId, recipientEmail: email, message, timestamp: now });
+            // } catch (notificationError) {
+            //   console.error('Failed to send pickup notification', notificationError);
+            // }
           }),
         );
       }
@@ -438,19 +438,19 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
 
       const message = `Someone is waiting for ${machine.label}. Please pick up your laundry.`;
 
-      try {
-        const notifId = await sendNotification({
-          recipientEmail: machine.ownerEmail,
-          senderEmail: fromEmail,
-          message,
-          timestamp: now,
-          machineId: machine.id,
-          type: 'reminder',
-        });
-        recordNotification({ id: notifId, recipientEmail: machine.ownerEmail, message, timestamp: now });
-      } catch (notificationError) {
-        console.error('Failed to send reminder notification', notificationError);
-      }
+      // try {
+      //   const notifId = await sendNotification({
+      //     recipientEmail: machine.ownerEmail,
+      //     senderEmail: fromEmail,
+      //     message,
+      //     timestamp: now,
+      //     machineId: machine.id,
+      //     type: 'reminder',
+      //   });
+      //   recordNotification({ id: notifId, recipientEmail: machine.ownerEmail, message, timestamp: now });
+      // } catch (notificationError) {
+      //   console.error('Failed to send reminder notification', notificationError);
+      // }
 
   await writeMachineRealtime(id, updated, currentRoomId);
       return true;

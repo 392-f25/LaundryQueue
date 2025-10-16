@@ -1,4 +1,3 @@
-import { initializeApp } from 'firebase/app';
 import {
   getFirestore,
   collection,
@@ -14,21 +13,6 @@ import {
 } from 'firebase/firestore';
 
 let db: ReturnType<typeof getFirestore> | null = null;
-
-export function initFirebase() {
-  if (db) return db;
-  const firebaseConfig = {
-    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-    appId: import.meta.env.VITE_FIREBASE_APP_ID,
-    measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
-  };
-
-  const app = initializeApp(firebaseConfig);
-  db = getFirestore(app);
-  return db;
-}
 
 /**
  * Listen to all machines for a roomId (machines stored in top-level 'machines' collection)

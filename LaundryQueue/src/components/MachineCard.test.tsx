@@ -20,7 +20,6 @@ const machineOwned: Machine = {
   label: 'W1',
   state: 'in-use',
   ownerEmail: 'demo@example.com',
-  ownerName: 'Demo User',
   startTime: new Date().toISOString(),
   durationMin: 30,
 };

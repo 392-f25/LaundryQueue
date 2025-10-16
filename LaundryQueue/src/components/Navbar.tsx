@@ -1,27 +1,17 @@
 import { useContext, useState } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import { QueueContext } from '../context/QueueContext';
+import { initFirebase, signInWithGoogle, signOut, useAuthState } from '../utilities/firebaseRealtime';
 
 export const Navbar = () => {
-  const auth = useContext(AuthContext);
-
-  const onChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const v = e.target.value;
-    const existing = auth?.users.find((u) => u.id === v);
-    if (existing) auth?.setCurrentUser(existing);
-  };
-
-  const onAddUser = () => {
-    const name = prompt('New user name');
-    if (name && name.trim()) {
-      const email = prompt('Email address (optional, but recommended for notifications)');
-      auth?.addUser(name.trim(), email?.trim() || undefined);
-    }
-  };
+  const firebase = initFirebase();
+  const auth = 'auth' in (firebase ?? {}) ? (firebase as { auth: any }).auth : undefined;
+  const authState = useAuthState(auth)
+  const user=authState.user
 
   const queue = useContext(QueueContext);
   const [open, setOpen] = useState(false);
-  const currentUserEmail = auth?.currentUser.email || null;
+  const currentUserEmail = user?.email || null;
   const notes = currentUserEmail ? queue?.getNotifications(currentUserEmail) || [] : [];
 
   const onRoomChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -79,13 +69,23 @@ export const Navbar = () => {
               )}
             </select>
 
-            <select aria-label="Switch user" onChange={onChange} value={auth?.currentUser.id} className="text-sm px-2 py-1">
-              {auth?.users.map((u) => (
-                <option key={u.id} value={u.id}>{u.username}</option>
-              ))}
-            </select>
-            <button onClick={onAddUser} className="text-sm px-2 py-1">+ Add user</button>
           </div>
+          <div style={{ flex: 1 }} className="flex justify-end">
+                {user ? (
+                    <button
+                        className="px-3 py-1 border rounded bg-blue-500 text-white"
+                        onClick={() => signOut(auth)}>
+                        Sign Out
+                    </button>
+                ) : (
+                    <button
+                        className="px-3 py-1 border rounded bg-blue-500 text-white"
+                        onClick={() => signInWithGoogle(auth)}>
+                        Sign in
+                    </button>
+                )}
+            </div>
+
         </div>
       </div>
     </header>
