@@ -33,6 +33,7 @@ type QueueContextValue = {
   startMachine: (id: string, userEmail: string, durationMin: number, ownerName?: string) => Promise<void>;
   finishMachine: (id: string) => Promise<void>;
   sendReminder: (id: string, fromEmail: string) => Promise<boolean>;
+  skipToFinished: (id: string) => Promise<void>;
   getNotifications: (userEmail: string) => Array<{ id: string; message: string; ts: number }>;
   clearNotifications: (userEmail: string) => void;
   rooms: Array<{ id: string; name?: string }>;
@@ -402,6 +403,7 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
       } catch (err) {
         console.error('Failed to finish machine transaction', err);
       }
+
     },
     [machines, recordNotification],
   );
@@ -455,7 +457,45 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
   await writeMachineRealtime(id, updated, currentRoomId);
       return true;
     },
-    [machines, recordNotification],
+    [machines, recordNotification, currentRoomId],
+  );
+
+  const skipToFinished = useCallback(
+    async (id: string) => {
+      const machine = machines.find((m) => m.id === id);
+      if (!machine || machine.state !== 'in-use') return;
+
+      const now = Date.now();
+      const timestampIso = new Date(now).toISOString();
+
+      const updated: Machine = {
+        ...machine,
+        state: 'finished',
+        expectedFinishTime: timestampIso,
+        completedAt: timestampIso,
+        completionNotifiedAt: machine.completionNotifiedAt ?? now,
+      };
+
+      if (!machine.completionNotifiedAt && machine.ownerEmail) {
+        const message = `Your laundry in ${machine.label} is done! (skipped)`;
+        try {
+          const notifId = await sendNotification({
+            recipientEmail: machine.ownerEmail,
+            message,
+            timestamp: now,
+            machineId: machine.id,
+            type: 'completion',
+          });
+          recordNotification({ id: notifId, recipientEmail: machine.ownerEmail, message, timestamp: now });
+          updated.completionNotifiedAt = now;
+        } catch (error) {
+          console.error('Failed to send skip completion notification', error);
+        }
+      }
+
+      await writeMachineRealtime(id, updated, currentRoomId);
+    },
+    [machines, recordNotification, currentRoomId],
   );
 
   const getNotifications = useCallback(
@@ -478,13 +518,14 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
       startMachine,
       finishMachine,
       sendReminder,
+      skipToFinished,
       getNotifications,
       clearNotifications,
       rooms,
       currentRoomId,
       setCurrentRoom: setCurrentRoomId,
     }),
-    [machines, startMachine, finishMachine, sendReminder, getNotifications, clearNotifications, rooms, currentRoomId],
+    [machines, startMachine, finishMachine, sendReminder, skipToFinished, getNotifications, clearNotifications, rooms, currentRoomId],
   );
 
   return <QueueContext.Provider value={value}>{children}</QueueContext.Provider>;

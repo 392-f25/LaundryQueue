@@ -1,18 +1,26 @@
 import { render, screen } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { AuthContext } from '../context/AuthContext';
 import { QueueContext } from '../context/QueueContext';
 import { MachineCard } from './MachineCard';
 import type { Machine } from '../context/QueueContext';
-import { vi } from 'vitest';
+
+vi.mock('../utilities/firebaseRealtime', () => ({
+  initFirebase: () => ({}),
+  useAuthState: () => ({ user: { email: 'demo@example.com' } }),
+}));
 
 const makeQueueValue = () => ({
   machines: [],
   startMachine: vi.fn(),
   finishMachine: vi.fn(),
   sendReminder: vi.fn(async () => true),
+  skipToFinished: vi.fn(),
   getNotifications: () => [],
   clearNotifications: () => {},
+  rooms: [],
+  currentRoomId: 'default',
+  setCurrentRoom: vi.fn(),
 });
 
 const machineOwned: Machine = {

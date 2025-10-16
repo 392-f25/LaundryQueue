@@ -229,6 +229,17 @@ function encodeEmail(email: string) {
   return encodeURIComponent(email).replace(/\./g, '%2E');
 }
 
+export type NotificationRecord = {
+  id: string;
+  recipientEmail: string;
+  senderEmail: string | null;
+  message: string;
+  ts: number;
+  machineId: string | null;
+  type: string | null;
+  createdAt?: number;
+};
+
 /**
  * Minimal sendNotification implementation for now: stores a notification under
  * `/notifications/{encodedEmail}/{notifId}` and returns the generated id.
@@ -254,7 +265,7 @@ export async function sendNotification(payload: {
   // push() generates a new child reference and key
   const pushRef = push(ref(database, `notifications/${emailKey}`));
   const id = pushRef.key as string;
-  const record = {
+  const record: NotificationRecord = {
     id,
     recipientEmail: payload.recipientEmail,
     senderEmail: payload.senderEmail || null,
@@ -270,6 +281,48 @@ export async function sendNotification(payload: {
   
 }
 
+export function subscribeToNotificationsForEmail(email: string, cb: (records: NotificationRecord[]) => void) {
+  const database = ensureDb();
+  const emailKey = encodeEmail(email);
+  const notifRef = ref(database, `notifications/${emailKey}`);
+  const listener = (snap: any) => {
+    if (!snap.exists()) {
+      cb([]);
+      return;
+    }
+    const val = snap.val() as Record<string, NotificationRecord>;
+    const list = Object.values(val).sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0));
+    cb(list);
+  };
+  onValue(notifRef, listener);
+  return () => off(notifRef, 'value', listener);
+}
+
+export async function clearNotificationsForEmail(email: string, ids?: string[]) {
+  const database = ensureDb();
+  const emailKey = encodeEmail(email);
+  if (!ids || ids.length === 0) {
+    await set(ref(database, `notifications/${emailKey}`), null);
+    return;
+  }
+  await Promise.all(
+    ids.map((id) => set(ref(database, `notifications/${emailKey}/${id}`), null)),
+  );
+}
+
+export async function clearNotificationsForMachine(email: string, machineId: string) {
+  const database = ensureDb();
+  const emailKey = encodeEmail(email);
+  const snap = await get(ref(database, `notifications/${emailKey}`));
+  if (!snap.exists()) return;
+  const data = snap.val() as Record<string, NotificationRecord>;
+  const ids = Object.values(data)
+    .filter((n) => n.machineId === machineId)
+    .map((n) => n.id);
+  if (ids.length === 0) return;
+  await Promise.all(ids.map((id) => set(ref(database, `notifications/${emailKey}/${id}`), null)));
+}
+
 
 export default {
   subscribeToMachines,
@@ -279,4 +332,7 @@ export default {
   writeMachines,
   fetchMachinesForRoom,
   sendNotification,
+  subscribeToNotificationsForEmail,
+  clearNotificationsForEmail,
+  clearNotificationsForMachine,
 };

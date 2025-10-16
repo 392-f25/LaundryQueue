@@ -1,4 +1,4 @@
-import { useContext, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import { AuthContext } from "../context/AuthContext";
 import { QueueContext } from "../context/QueueContext";
 import {
@@ -7,6 +7,8 @@ import {
   signOut,
   useAuthState,
 } from "../utilities/firebaseRealtime";
+import { useUserNotifications } from "../hooks/useUserNotifications";
+import { NotificationBanner } from "./NotificationBanner";
 
 export const Navbar = () => {
   const firebase = initFirebase();
@@ -17,20 +19,90 @@ export const Navbar = () => {
 
   const queue = useContext(QueueContext);
   const [open, setOpen] = useState(false);
-  const currentUserEmail = user?.email || null;
-  const notes = currentUserEmail
-    ? queue?.getNotifications(currentUserEmail) || []
-    : [];
+  const fallbackEmail =
+    typeof window !== "undefined" ? localStorage.getItem("userEmail") : null;
+  const currentUserEmail = user?.email || fallbackEmail;
+  const { notifications, clearAll: clearAllNotifications } =
+    useUserNotifications(currentUserEmail);
+  const completionNotifications = useMemo(
+    () => notifications.filter((n) => n.type === "completion"),
+    [notifications]
+  );
+
+  const [acknowledgedIds, setAcknowledgedIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setAcknowledgedIds((prev) => {
+      const next = new Set<string>();
+      notifications.forEach((n) => {
+        if (prev.has(n.id)) next.add(n.id);
+      });
+      return next;
+    });
+  }, [notifications]);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const custom = event as CustomEvent<{ email?: string; machineId?: string }>;
+      const detail = custom.detail;
+      if (!detail || !detail.machineId) return;
+      if (detail.email && detail.email !== currentUserEmail) return;
+      setAcknowledgedIds((prev) => {
+        const next = new Set(prev);
+        completionNotifications.forEach((n) => {
+          if (n.machineId === detail.machineId) {
+            next.add(n.id);
+          }
+        });
+        return next;
+      });
+    };
+
+    window.addEventListener("washerwatch:ack-machine", handler as EventListener);
+    return () => {
+      window.removeEventListener("washerwatch:ack-machine", handler as EventListener);
+    };
+  }, [completionNotifications, currentUserEmail]);
 
   const onRoomChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const v = e.target.value;
     if (queue && queue.setCurrentRoom) queue.setCurrentRoom(v);
   };
 
-  const onClear = () => {
+  const onClear = async () => {
     if (!currentUserEmail) return;
     queue?.clearNotifications(currentUserEmail);
+    await clearAllNotifications();
+    setAcknowledgedIds(new Set());
     setOpen(false);
+  };
+
+  const badgeCount = notifications.filter((n) => !acknowledgedIds.has(n.id)).length;
+  const activeCompletion = completionNotifications.find(
+    (n) => !acknowledgedIds.has(n.id)
+  );
+
+  const dismissBanner = () => {
+    setAcknowledgedIds((prev) => {
+      const next = new Set(prev);
+      completionNotifications.forEach((n) => next.add(n.id));
+      return next;
+    });
+  };
+
+const bannerMessage = activeCompletion
+  ? activeCompletion.message ||
+    `Laundry finished in ${activeCompletion.machineId ?? "a machine"}`
+  : null;
+
+  const handleBellClick = () => {
+    setOpen((s) => {
+      const next = !s;
+      if (!s) {
+        dismissBanner();
+      }
+      return next;
+    });
   };
 
   return (
@@ -62,13 +134,29 @@ export const Navbar = () => {
         </div>
 
         <div className="flex items-center gap-6">
-          <div style={{ position: "relative" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              position: "relative",
+              overflow: "visible",
+            }}
+          >
+            <div style={{ width: 280 }}>
+              {bannerMessage && (
+                <NotificationBanner
+                  message={bannerMessage}
+                  onDismiss={dismissBanner}
+                />
+              )}
+            </div>
             <button
               aria-label="Notifications"
-              onClick={() => setOpen((s) => !s)}
+              onClick={handleBellClick}
               className="text-sm px-2 py-1"
             >
-              🔔 {notes.length > 0 ? `(${notes.length})` : ""}
+              🔔 {badgeCount > 0 ? `(${badgeCount})` : ""}
             </button>
             {open && (
               <div
@@ -95,12 +183,12 @@ export const Navbar = () => {
                   </button>
                 </div>
                 <div style={{ marginTop: 10 }}>
-                  {notes.length === 0 && (
+                  {notifications.length === 0 && (
                     <div style={{ fontSize: 13, color: "#666" }}>
                       No notifications
                     </div>
                   )}
-                  {notes.map((n) => (
+                  {notifications.map((n) => (
                     <div
                       key={n.id}
                       style={{
