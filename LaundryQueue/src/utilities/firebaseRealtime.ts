@@ -242,29 +242,31 @@ export async function sendNotification(payload: {
   machineId?: string | null;
   type?: string | null;
 }) {
-  // const database = db; // allow null case for tests
-  // // deterministic fallback id when DB isn't initialized
-  // if (!database) {
-  //   return `mock-${payload.timestamp}-${Math.random().toString(36).slice(2, 8)}`;
-  // }
 
-  // const emailKey = encodeEmail(payload.recipientEmail);
-  // // push() generates a new child reference and key
-  // const pushRef = push(ref(database, `notifications/${emailKey}`));
-  // const id = pushRef.key as string;
-  // const record = {
-  //   id,
-  //   recipientEmail: payload.recipientEmail,
-  //   senderEmail: payload.senderEmail || null,
-  //   message: payload.message,
-  //   ts: payload.timestamp,
-  //   machineId: payload.machineId || null,
-  //   type: payload.type || null,
-  //   createdAt: Date.now(),
-  // };
-  // // write the record
-  // await set(pushRef, record);
-  // return id;
+
+  const database = db; // allow null case for tests
+  // deterministic fallback id when DB isn't initialized
+  if (!database) {
+    return `mock-${payload.timestamp}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  const emailKey = encodeEmail(payload.recipientEmail);
+  // push() generates a new child reference and key
+  const pushRef = push(ref(database, `notifications/${emailKey}`));
+  const id = pushRef.key as string;
+  const record = {
+    id,
+    recipientEmail: payload.recipientEmail,
+    senderEmail: payload.senderEmail || null,
+    message: payload.message,
+    ts: payload.timestamp,
+    machineId: payload.machineId || null,
+    type: payload.type || null,
+    createdAt: Date.now(),
+  };
+  // write the record
+  await set(pushRef, record);
+  return id;
   
 }
 

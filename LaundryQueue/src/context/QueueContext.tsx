@@ -261,20 +261,20 @@ export const QueueProvider = ({ children }: { children: React.ReactNode }) => {
           };
 
           if (!machine.completionNotifiedAt && machine.ownerEmail) {
-            // const message = `Your laundry in ${machine.label} is done!`;
-            // try {
-            //   const id = await sendNotification({
-            //     recipientEmail: machine.ownerEmail,
-            //     message,
-            //     timestamp: now,
-            //     machineId: machine.id,
-            //     type: 'completion',
-            //   });
-            //   recordNotification({ id, recipientEmail: machine.ownerEmail, message, timestamp: now });
-            //   updated.completionNotifiedAt = now;
-            // } catch (notificationError) {
-            //   console.error('Failed to send completion notification', notificationError);
-            // }
+            const message = `Your laundry in ${machine.label} is done!`;
+            try {
+              const id = await sendNotification({
+                recipientEmail: machine.ownerEmail,
+                message,
+                timestamp: now,
+                machineId: machine.id,
+                type: 'completion',
+              });
+              recordNotification({ id, recipientEmail: machine.ownerEmail, message, timestamp: now });
+              updated.completionNotifiedAt = now;
+            } catch (notificationError) {
+              console.error('Failed to send completion notification', notificationError);
+            }
           }
 
           updatedMachines.push(updated);

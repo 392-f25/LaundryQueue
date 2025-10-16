@@ -90,30 +90,6 @@ export async function writeMachine(id: string, data: Record<string, any>) {
 /**
  * Send a notification (stores in notifications collection). Returns generated id.
  */
-export async function sendNotification(payload: {
-  recipientEmail: string;
-  senderEmail?: string;
-  message: string;
-  timestamp: number;
-  machineId?: string;
-  type?: string;
-}) {
-  if (!db) {
-    // fallback: return deterministic-ish id so tests/mocks can work
-    return `mock-${payload.timestamp}-${Math.random().toString(36).slice(2,8)}`;
-  }
-  const ref = collection(db, 'notifications');
-  const docRef = await addDoc(ref, {
-    recipientEmail: payload.recipientEmail,
-    senderEmail: payload.senderEmail || null,
-    message: payload.message,
-    ts: Timestamp.fromMillis(payload.timestamp),
-    machineId: payload.machineId || null,
-    type: payload.type || null,
-    createdAt: Timestamp.now(),
-  });
-  return docRef.id;
-}
 
 /**
  * Helper to fetch rooms or users if needed

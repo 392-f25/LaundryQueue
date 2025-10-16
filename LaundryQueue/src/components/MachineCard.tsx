@@ -1,7 +1,6 @@
 import { useContext, useEffect, useMemo, useState } from 'react';
 import type { Machine } from '../context/QueueContext';
 import { QueueContext } from '../context/QueueContext';
-import { getUserEmail } from '../utilities/firebasePlaceholder';
 import { initFirebase, useAuthState } from '../utilities/firebaseRealtime';
 
 const formatRemaining = (finishTs?: string | null) => {
@@ -44,7 +43,7 @@ export const MachineCard = ({ machine }: { machine: Machine }) => {
 
   const [selectedDuration, setSelectedDuration] = useState<number>(machine.durationMin || 35);
   const [showEmailModal, setShowEmailModal] = useState(false);
-  const [userEmail, setUserEmail] = useState<string | null>(getUserEmail());
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const DURATIONS = [0.1, 35, 45, 60];
 
   useEffect(() => {

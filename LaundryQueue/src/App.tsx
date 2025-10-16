@@ -73,17 +73,17 @@ const FirebaseProvider = ({ children }: { children: React.ReactNode }) => {
 export default function App() {
   return (
     <FirebaseProvider>
-      <AuthProvider>
+      {/* <AuthProvider> */}
         <QueueProvider>
           <div className="min-h-screen bg-slate-50">
             <Navbar />
             <main className="p-4 max-w-5xl mx-auto">
-              <h1 className="text-2xl font-semibold mb-4">Laundry Queue</h1>
+              <h1 className="text-2xl font-semibold mb-4">WasherWatch</h1>
               <MachineGrid />
             </main>
           </div>
         </QueueProvider>
-      </AuthProvider>
+      {/* </AuthProvider> */}
     </FirebaseProvider>
   );
 }
