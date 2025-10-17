@@ -123,8 +123,9 @@ export const Navbar = () => {
       <div className="max-w-5xl mx-auto p-4 flex items-center justify-between">
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <img
-            src="logo.png"
+            src="/logo.png"
             alt="WasherWatch logo"
+            className="h-8 w-auto"
             style={{ height: 36 }}
             onError={(e) => {
               // hide broken image and leave the alt text visible
