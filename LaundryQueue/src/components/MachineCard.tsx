@@ -43,7 +43,7 @@ export const MachineCard = ({ machine }: { machine: Machine }) => {
   const currentUserEmail = user?.email || null;
 
   const [selectedDuration, setSelectedDuration] = useState<number>(machine.durationMin || 35);
-  const [showEmailModal, setShowEmailModal] = useState(false);
+  // const [showEmailModal, setShowEmailModal] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(
     typeof window !== 'undefined' ? localStorage.getItem('userEmail') : null,
   );
@@ -66,7 +66,7 @@ export const MachineCard = ({ machine }: { machine: Machine }) => {
     console.log('onStart called', { userEmail, machine });
     if (!userEmail) {
       console.log('No user email, showing modal');
-      setShowEmailModal(true);
+      alert('Please sign in');
       return;
     }
     const duration = Number(selectedDuration || 0.1);
@@ -79,7 +79,7 @@ export const MachineCard = ({ machine }: { machine: Machine }) => {
       console.log('Machine started successfully');
     } catch (error) {
       console.error('Failed to start machine:', error);
-      alert('Failed to start machine. Please try again.');
+      alert('Please Sign In First.');
     }
   };
 
@@ -100,9 +100,13 @@ export const MachineCard = ({ machine }: { machine: Machine }) => {
   };
 
   const onReminder = async () => {
-    const fromEmail = auth?.currentUser.email || localStorage.getItem('userEmail');
+    const fromEmail = auth?.currentUser?.email || localStorage.getItem('userEmail');
     if (!fromEmail) {
-      setShowEmailModal(true);
+      alert('Please sign in');
+      return;
+    }
+    if(!user){
+      alert('Please sign in');
       return;
     }
     const ok = await sendReminder(machine.id, fromEmail);
@@ -118,16 +122,6 @@ export const MachineCard = ({ machine }: { machine: Machine }) => {
 
   return (
     <>
-      <EmailModal
-        isOpen={showEmailModal}
-        onClose={() => setShowEmailModal(false)}
-        machineId={machine.id}
-        machineLabel={machine.label}
-        onSubmit={async (email) => {
-          setUserEmail(email);
-          await startMachine(machine.id, email, Number(selectedDuration), email);
-        }}
-      />
       <div className={`p-4 rounded border ${bg} ${blink}`}>
         <div className="flex items-center justify-between">
           <div className="text-lg font-semibold">{machine.label}</div>

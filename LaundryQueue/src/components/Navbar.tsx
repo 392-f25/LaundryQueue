@@ -29,7 +29,9 @@ export const Navbar = () => {
     [notifications]
   );
 
-  const [acknowledgedIds, setAcknowledgedIds] = useState<Set<string>>(new Set());
+  const [acknowledgedIds, setAcknowledgedIds] = useState<Set<string>>(
+    new Set()
+  );
 
   useEffect(() => {
     setAcknowledgedIds((prev) => {
@@ -43,7 +45,10 @@ export const Navbar = () => {
 
   useEffect(() => {
     const handler = (event: Event) => {
-      const custom = event as CustomEvent<{ email?: string; machineId?: string }>;
+      const custom = event as CustomEvent<{
+        email?: string;
+        machineId?: string;
+      }>;
       const detail = custom.detail;
       if (!detail || !detail.machineId) return;
       if (detail.email && detail.email !== currentUserEmail) return;
@@ -58,9 +63,15 @@ export const Navbar = () => {
       });
     };
 
-    window.addEventListener("washerwatch:ack-machine", handler as EventListener);
+    window.addEventListener(
+      "washerwatch:ack-machine",
+      handler as EventListener
+    );
     return () => {
-      window.removeEventListener("washerwatch:ack-machine", handler as EventListener);
+      window.removeEventListener(
+        "washerwatch:ack-machine",
+        handler as EventListener
+      );
     };
   }, [completionNotifications, currentUserEmail]);
 
@@ -77,7 +88,9 @@ export const Navbar = () => {
     setOpen(false);
   };
 
-  const badgeCount = notifications.filter((n) => !acknowledgedIds.has(n.id)).length;
+  const badgeCount = notifications.filter(
+    (n) => !acknowledgedIds.has(n.id)
+  ).length;
   const activeCompletion = completionNotifications.find(
     (n) => !acknowledgedIds.has(n.id)
   );
@@ -90,10 +103,10 @@ export const Navbar = () => {
     });
   };
 
-const bannerMessage = activeCompletion
-  ? activeCompletion.message ||
-    `Laundry finished in ${activeCompletion.machineId ?? "a machine"}`
-  : null;
+  const bannerMessage = activeCompletion
+    ? activeCompletion.message ||
+      `Laundry finished in ${activeCompletion.machineId ?? "a machine"}`
+    : null;
 
   const handleBellClick = () => {
     setOpen((s) => {
@@ -110,7 +123,7 @@ const bannerMessage = activeCompletion
       <div className="max-w-5xl mx-auto p-4 flex items-center justify-between">
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <img
-            src="public/logo.png"
+            src="logo.png"
             alt="WasherWatch logo"
             style={{ height: 36 }}
             onError={(e) => {
@@ -122,7 +135,7 @@ const bannerMessage = activeCompletion
           <div>
             <div className="text-sm text-slate-600"></div>
             <div className="text-xs text-slate-500 mt-1 break-all">
-              {currentUserEmail ? (
+              {currentUserEmail && user? (
                 `Email: ${currentUserEmail}`
               ) : (
                 <span className="text-amber-600">
@@ -228,14 +241,14 @@ const bannerMessage = activeCompletion
           <div style={{ flex: 1 }} className="flex justify-end">
             {user ? (
               <button
-                className="px-3 py-1 border rounded bg-blue-500 text-white"
+                className="px-3 py-1 border rounded bg-blue-500 text-white hover:bg-blue-600"
                 onClick={() => signOut(auth)}
               >
                 Sign Out
               </button>
             ) : (
               <button
-                className="px-3 py-1 border rounded bg-blue-500 text-white"
+                className="px-3 py-1 border rounded bg-blue-500 text-white hover:bg-blue-600"
                 onClick={() => signInWithGoogle(auth)}
               >
                 Sign in
