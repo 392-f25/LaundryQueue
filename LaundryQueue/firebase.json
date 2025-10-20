@@ -6,5 +6,19 @@
       "**/.*",
       "**/node_modules/**"
     ]
+  },
+  "emulators": {
+    "database": {
+      "port": 9000
+    },
+    "ui": {
+      "enabled": true,
+      "port": 4000
+    },
+    "singleProjectMode": true
+  }
+  ,
+  "database": {
+    "rules": "database.rules.json"
   }
 }
